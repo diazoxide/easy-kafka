@@ -1,6 +1,5 @@
 package easy_kafka
 
-//git@github.com:diazoxide/easy-kafka.git
 import (
 	"encoding/json"
 	"errors"
