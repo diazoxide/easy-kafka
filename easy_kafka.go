@@ -36,7 +36,7 @@ func New[T interface{}](
 ) *Kafka[T] {
 
 	topic := fmt.Sprintf("%T", *new(T))
-	log.Println("NAME: " + topic)
+
 	k := &Kafka[T]{
 		Logger:      logger,
 		Addresses:   addresses,
