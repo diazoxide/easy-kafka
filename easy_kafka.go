@@ -3,6 +3,7 @@ package easy_kafka
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/avast/retry-go"
 	"github.com/segmentio/kafka-go"
 	"golang.org/x/net/context"
@@ -10,18 +11,15 @@ import (
 	"math"
 	"net"
 	"strconv"
-	"sync"
 )
 
 type Kafka[T interface{}] struct {
-	Logger           *log.Logger
-	Addresses        []string
-	TopicPrefix      string
-	GroupId          string
-	ThreadsCount     int
-	Threads          []*Kafka[T]
-	Topic            string
-	RetryTopicSuffix string
+	Logger      *log.Logger
+	Addresses   []string
+	TopicPrefix string
+	GroupId     string
+	Threads     []*Kafka[T]
+	Topic       string
 
 	Partitions  uint64
 	writer      *kafka.Writer
@@ -29,24 +27,23 @@ type Kafka[T interface{}] struct {
 	dialer      *kafka.Dialer
 }
 
-func NewKafka[T interface{}](
+func New[T interface{}](
 	addresses []string,
-	topic string,
 	topicPrefix string,
 	groupId string,
-	threadsCount int,
 	partitions uint64,
 	logger *log.Logger,
 ) *Kafka[T] {
+
+	topic := fmt.Sprintf("%T", *new(T))
+	log.Println("NAME: " + topic)
 	k := &Kafka[T]{
-		Logger:           logger,
-		Addresses:        addresses,
-		TopicPrefix:      topicPrefix,
-		GroupId:          groupId,
-		ThreadsCount:     threadsCount,
-		Partitions:       partitions,
-		Topic:            topic,
-		RetryTopicSuffix: "retry",
+		Logger:      logger,
+		Addresses:   addresses,
+		TopicPrefix: topicPrefix,
+		GroupId:     groupId,
+		Partitions:  partitions,
+		Topic:       topic,
 	}
 
 	conn, err := kafka.Dial("tcp", k.Addresses[0])
@@ -72,11 +69,6 @@ func NewKafka[T interface{}](
 			NumPartitions:     int(k.Partitions),
 			ReplicationFactor: 1,
 		},
-		{
-			Topic:             k.getRetryTopic(),
-			NumPartitions:     int(k.Partitions),
-			ReplicationFactor: 1,
-		},
 	}
 
 	err = controllerConn.CreateTopics(topicConfigs...)
@@ -92,50 +84,6 @@ func (k *Kafka[T]) getMainTopic() string {
 	return k.TopicPrefix + "_" + k.Topic
 }
 
-func (k *Kafka[T]) getRetryTopic() string {
-	return k.getMainTopic() + "_" + k.RetryTopicSuffix
-}
-
-func (k *Kafka[T]) InitConsumer(consumerHandler func(message T) error) (err error) {
-	wg := sync.WaitGroup{}
-	wg.Add(k.ThreadsCount)
-
-	for i := 0; i < k.ThreadsCount; i += 1 {
-		go func(i int) {
-			defer wg.Done()
-
-			t := NewKafka[T](k.Addresses, k.Topic, k.TopicPrefix, k.GroupId, k.ThreadsCount, k.Partitions, k.Logger)
-
-			k.Threads = append(k.Threads, t)
-
-			err = retry.Do(
-				func() error {
-					err := k.consume(consumerHandler)
-					return err
-				},
-				retry.Attempts(math.MaxInt8),
-				retry.OnRetry(func(n uint, err error) {
-					k.Logger.Println("Retry " + strconv.Itoa(int(n+1)) + " " + err.Error())
-				}),
-			)
-
-			if err != nil {
-				k.Logger.Panicln(err)
-			}
-			t.Close()
-
-			if err != nil {
-				return
-			}
-		}(i)
-	}
-
-	k.Logger.Println("Consumers count: " + strconv.Itoa(k.ThreadsCount))
-
-	wg.Wait()
-
-	return err
-}
 func (k *Kafka[T]) prepareWriter() {
 	if k.writer == nil {
 		k.writer = &kafka.Writer{
@@ -151,15 +99,14 @@ func (k *Kafka[T]) prepareReader() {
 		k.emailReader = kafka.NewReader(kafka.ReaderConfig{
 			Brokers:     k.Addresses,
 			GroupID:     k.GroupId,
-			GroupTopics: []string{k.getMainTopic(), k.getRetryTopic()},
-			//Topic: "^" + mainTopic + "(_retry_.*)|$",
-			MinBytes: 10e3, // 10KB
-			MaxBytes: 10e6, // 10MB
+			GroupTopics: []string{k.getMainTopic()},
+			MinBytes:    10e6, // 10MB
+			MaxBytes:    10e6, // 10MB
 		})
 	}
 }
 
-func (k *Kafka[T]) Produce(isRetry bool, messages ...*T) error {
+func (k *Kafka[T]) Produce(messages ...*T) error {
 	k.prepareWriter()
 
 	var kms []kafka.Message
@@ -171,9 +118,6 @@ func (k *Kafka[T]) Produce(isRetry bool, messages ...*T) error {
 		}
 
 		topic := k.getMainTopic()
-		if isRetry {
-			topic = k.getRetryTopic()
-		}
 
 		kms = append(kms, kafka.Message{Value: b, Topic: topic})
 	}
@@ -198,7 +142,7 @@ func (k *Kafka[T]) readMessages() (kafka.Message, error) {
 	return k.emailReader.ReadMessage(context.Background())
 }
 
-func (k *Kafka[T]) consume(consumerHandler func(message T) error) (err error) {
+func (k *Kafka[T]) Consume(consumerHandler func(message T) error, async bool) (err error) {
 	for {
 		m, err := k.readMessages()
 		if err != nil {
@@ -214,9 +158,18 @@ func (k *Kafka[T]) consume(consumerHandler func(message T) error) (err error) {
 			return err
 		}
 
-		err = consumerHandler(message)
-		if err != nil {
-			k.Logger.Println("Consumer error: ", err)
+		if async {
+			go func() {
+				err = consumerHandler(message)
+				if err != nil {
+					k.Logger.Println("Consumer error: ", err)
+				}
+			}()
+		} else {
+			err = consumerHandler(message)
+			if err != nil {
+				k.Logger.Println("Consumer error: ", err)
+			}
 		}
 	}
 }
