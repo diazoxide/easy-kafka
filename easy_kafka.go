@@ -1,9 +1,8 @@
-package easy_kafka
+package EasyKafka
 
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/avast/retry-go"
 	"github.com/segmentio/kafka-go"
 	"golang.org/x/net/context"
@@ -19,12 +18,11 @@ type Kafka[T interface{}] struct {
 	TopicPrefix string
 	GroupId     string
 	Threads     []*Kafka[T]
-	Topic       string
 
-	Partitions  uint64
-	writer      *kafka.Writer
-	emailReader *kafka.Reader
-	dialer      *kafka.Dialer
+	Partitions uint64
+	writer     *kafka.Writer
+	reader     *kafka.Reader
+	dialer     *kafka.Dialer
 }
 
 func New[T interface{}](
@@ -35,17 +33,19 @@ func New[T interface{}](
 	logger *log.Logger,
 ) *Kafka[T] {
 
-	topic := fmt.Sprintf("%T", *new(T))
-
 	k := &Kafka[T]{
 		Logger:      logger,
 		Addresses:   addresses,
 		TopicPrefix: topicPrefix,
 		GroupId:     groupId,
 		Partitions:  partitions,
-		Topic:       topic,
 	}
 
+	return k
+
+}
+
+func (k *Kafka[T]) prepareTopics(topics ...string) error {
 	conn, err := kafka.Dial("tcp", k.Addresses[0])
 	if err != nil {
 		panic(err)
@@ -63,25 +63,16 @@ func New[T interface{}](
 	}
 	defer controllerConn.Close()
 
-	var topicConfigs = []kafka.TopicConfig{
-		{
-			Topic:             k.getMainTopic(),
+	var topicConfigs = make([]kafka.TopicConfig, len(topics))
+	for i, t := range topics {
+		topicConfigs[i] = kafka.TopicConfig{
+			Topic:             t,
 			NumPartitions:     int(k.Partitions),
 			ReplicationFactor: 1,
-		},
+		}
 	}
 
-	err = controllerConn.CreateTopics(topicConfigs...)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return k
-
-}
-
-func (k *Kafka[T]) getMainTopic() string {
-	return k.TopicPrefix + "_" + k.Topic
+	return controllerConn.CreateTopics(topicConfigs...)
 }
 
 func (k *Kafka[T]) prepareWriter() {
@@ -94,19 +85,25 @@ func (k *Kafka[T]) prepareWriter() {
 	}
 }
 
-func (k *Kafka[T]) prepareReader() {
-	if k.emailReader == nil {
-		k.emailReader = kafka.NewReader(kafka.ReaderConfig{
+func (k *Kafka[T]) prepareReader(topics []string) {
+	if k.reader == nil {
+		k.reader = kafka.NewReader(kafka.ReaderConfig{
 			Brokers:     k.Addresses,
 			GroupID:     k.GroupId,
-			GroupTopics: []string{k.getMainTopic()},
+			GroupTopics: topics,
 			MinBytes:    10e6, // 10MB
 			MaxBytes:    10e6, // 10MB
 		})
 	}
 }
 
-func (k *Kafka[T]) Produce(messages ...*T) error {
+func (k *Kafka[T]) Produce(topic string, messages ...*T) error {
+	topic = k.prepareTopicName(topic)
+	err := k.prepareTopics(topic)
+	if err != nil {
+		return err
+	}
+
 	k.prepareWriter()
 
 	var kms []kafka.Message
@@ -116,8 +113,6 @@ func (k *Kafka[T]) Produce(messages ...*T) error {
 		if err != nil {
 			return err
 		}
-
-		topic := k.getMainTopic()
 
 		kms = append(kms, kafka.Message{Value: b, Topic: topic})
 	}
@@ -134,17 +129,36 @@ func (k *Kafka[T]) Produce(messages ...*T) error {
 	)
 }
 
-func (k *Kafka[T]) readMessages() (kafka.Message, error) {
-	k.prepareReader()
-	if k.emailReader == nil {
+func (k *Kafka[T]) readMessages(topics []string) (kafka.Message, error) {
+	k.prepareReader(topics)
+
+	if k.reader == nil {
 		k.Logger.Fatalln(errors.New("reader not initialized"))
 	}
-	return k.emailReader.ReadMessage(context.Background())
+	return k.reader.ReadMessage(context.Background())
 }
 
-func (k *Kafka[T]) Consume(consumerHandler func(message T) error, async bool) (err error) {
+func (k *Kafka[T]) prepareTopicName(topic string) string {
+	return k.TopicPrefix + topic
+}
+
+func (k *Kafka[T]) prepareTopicNames(topics []string) []string {
+	for i, t := range topics {
+		topics[i] = k.prepareTopicName(t)
+	}
+	return topics
+}
+
+func (k *Kafka[T]) Consume(topics []string, consumerHandler func(message T) error, async bool) (err error) {
+	topics = k.prepareTopicNames(topics)
+	err = k.prepareTopics(topics...)
+
+	if err != nil {
+		return err
+	}
+
 	for {
-		m, err := k.readMessages()
+		m, err := k.readMessages(topics)
 		if err != nil {
 			return err
 		}
@@ -175,8 +189,8 @@ func (k *Kafka[T]) Consume(consumerHandler func(message T) error, async bool) (e
 }
 
 func (k *Kafka[T]) Close() {
-	if k.emailReader != nil {
-		err := k.emailReader.Close()
+	if k.reader != nil {
+		err := k.reader.Close()
 		if err != nil {
 			panic(err)
 		}
