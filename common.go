@@ -35,14 +35,3 @@ func prepareTopics(address string, partitions uint, topics ...string) error {
 
 	return controllerConn.CreateTopics(topicConfigs...)
 }
-
-func prepareTopicName(prefix string, topic string) string {
-	return prefix + topic
-}
-
-func prepareTopicNames(prefix string, topics []string) []string {
-	for i, t := range topics {
-		topics[i] = prepareTopicName(prefix, t)
-	}
-	return topics
-}

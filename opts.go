@@ -16,23 +16,9 @@ func ConsumerInitialPartitionsCount[T any](count uint) ConsumerOption[T] {
 	}
 }
 
-func ConsumerTopicPrefix[T any](prefix string) ConsumerOption[T] {
-	return func(c *Consumer[T]) (err error) {
-		c.topicPrefix = prefix
-		return nil
-	}
-}
-
 func ProducerInitialPartitionsCount[T any](count uint) ProducerOption[T] {
 	return func(c *Producer[T]) (err error) {
 		c.partitions = count
-		return nil
-	}
-}
-
-func ProducerTopicPrefix[T any](prefix string) ProducerOption[T] {
-	return func(c *Producer[T]) (err error) {
-		c.topicPrefix = prefix
 		return nil
 	}
 }

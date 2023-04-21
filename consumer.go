@@ -10,10 +10,8 @@ type Consumer[T interface{}] struct {
 	addresses []string
 	topics    []string
 
-	topicPrefix string
-	groupId     string
-	partitions  uint
-
+	groupId      string
+	partitions   uint
 	readerConfig kafka.ReaderConfig
 
 	threads []*Consumer[T]
@@ -49,32 +47,17 @@ func NewConsumer[T any](
 	k.readerConfig.Brokers = k.addresses
 	k.readerConfig.GroupID = k.groupId
 	k.readerConfig.GroupTopics = topics
-
 	err := prepareTopics(k.addresses[0], k.partitions, topics...)
 	if err != nil {
 		panic(err)
 	}
-
-	//kafka.ReaderConfig{
-	//	Brokers:     k.addresses,
-	//	GroupID:     k.groupId,
-	//	GroupTopics: topics,
-	//	MinBytes:    10e6, // 10MB
-	//	MaxBytes:    10e6, // 10MB
-	//}
+	k.reader = kafka.NewReader(k.readerConfig)
 
 	return k
 
 }
 
-func (k *Consumer[T]) prepareReader(topics []string) {
-	if k.reader == nil {
-		k.reader = kafka.NewReader(k.readerConfig)
-	}
-}
-
-func (k *Consumer[T]) readMessages(topics []string) (kafka.Message, error) {
-	k.prepareReader(topics)
+func (k *Consumer[T]) readMessages() (kafka.Message, error) {
 
 	if k.reader == nil {
 		panic("reader not initialized")
@@ -89,7 +72,7 @@ func (k *Consumer[T]) Consume(handler ConsumerHandler[T], async bool) (err error
 	}
 
 	for {
-		m, err := k.readMessages(k.topics)
+		m, err := k.readMessages()
 		if err != nil {
 			return err
 		}

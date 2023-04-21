@@ -13,7 +13,6 @@ type ProducerRetryHandler[T any] func(k *Producer[T], n uint, err error)
 type Producer[T interface{}] struct {
 	addresses []string
 
-	topicPrefix    string
 	groupId        string
 	threads        []*Consumer[T]
 	maxAttempts    uint
@@ -72,7 +71,6 @@ func (p *Producer[T]) Produce(topics []string, messages ...*T) error {
 		}
 
 		for _, topic := range topics {
-			topic = prepareTopicName(p.topicPrefix, topic)
 			kms = append(kms, kafka.Message{Value: b, Topic: topic})
 		}
 	}
