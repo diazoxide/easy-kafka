@@ -2,21 +2,26 @@ package easykafka
 
 import (
 	"encoding/json"
+	"github.com/panjf2000/ants/v2"
 	"github.com/segmentio/kafka-go"
 	"golang.org/x/net/context"
 )
 
+type ConsumerErrorHandler[T any] func(k *Consumer[T], err error)
+
 type Consumer[T interface{}] struct {
-	addresses []string
-	topics    []string
+	addresses   []string
+	topics      []string
+	concurrency uint
 
 	groupId      string
 	partitions   uint
 	readerConfig kafka.ReaderConfig
 
-	threads []*Consumer[T]
-	writer  *kafka.Writer
-	reader  *kafka.Reader
+	onWrongMessage *ConsumerErrorHandler[T]
+	onReadError    *ConsumerErrorHandler[T]
+	threads        []*Consumer[T]
+	reader         *kafka.Reader
 }
 
 type ErrorHandler[T any] func(k *Consumer[T], err error)
@@ -35,6 +40,7 @@ func NewConsumer[T any](
 		topics:       topics,
 		groupId:      groupId,
 		partitions:   3,
+		concurrency:  3,
 		readerConfig: kafka.ReaderConfig{},
 	}
 
@@ -65,47 +71,36 @@ func (k *Consumer[T]) readMessages() (kafka.Message, error) {
 	return k.reader.ReadMessage(context.Background())
 }
 
-func (k *Consumer[T]) Consume(handler ConsumerHandler[T], async bool) (err error) {
-
-	if err != nil {
-		return err
-	}
+func (k *Consumer[T]) Consume(handler ConsumerHandler[T]) {
+	pool, _ := ants.NewPool(int(k.concurrency))
+	defer pool.Release()
 
 	for {
 		m, err := k.readMessages()
 		if err != nil {
-			return err
+			if k.onReadError != nil {
+				(*k.onReadError)(k, err)
+			}
+			continue
 		}
 
 		var message T
 
 		err = json.Unmarshal(m.Value, &message)
 		if err != nil {
-			return err
+			if k.onWrongMessage != nil {
+				(*k.onWrongMessage)(k, err)
+			}
+			continue
 		}
 
-		if async {
-			go func() {
-				handler(&message, &m)
-			}()
-		} else {
+		_ = pool.Submit(func() {
 			handler(&message, &m)
-		}
+		})
+
 	}
 }
 
-func (k *Consumer[T]) Close() {
-	if k.reader != nil {
-		err := k.reader.Close()
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	if k.writer != nil {
-		err := k.writer.Close()
-		if err != nil {
-			panic(err)
-		}
-	}
+func (k *Consumer[T]) Close() error {
+	return k.reader.Close()
 }

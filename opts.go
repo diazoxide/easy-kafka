@@ -15,24 +15,23 @@ func ConsumerInitialPartitionsCount[T any](count uint) ConsumerOption[T] {
 		return nil
 	}
 }
+func ConsumerConcurrency[T any](concurrency uint) ConsumerOption[T] {
+	return func(c *Consumer[T]) (err error) {
+		c.concurrency = concurrency
+		return nil
+	}
+}
+
+func WithWriterConfig[T any](writer *kafka.Writer) ProducerOption[T] {
+	return func(k *Producer[T]) (err error) {
+		k.writer = writer
+		return nil
+	}
+}
 
 func ProducerInitialPartitionsCount[T any](count uint) ProducerOption[T] {
 	return func(c *Producer[T]) (err error) {
 		c.partitions = count
-		return nil
-	}
-}
-
-func ProducerMaxAttempts[T any](attempts uint) ProducerOption[T] {
-	return func(c *Producer[T]) (err error) {
-		c.maxAttempts = attempts
-		return nil
-	}
-}
-
-func ProducerOnRetry[T any](fn ProducerRetryHandler[T]) ProducerOption[T] {
-	return func(c *Producer[T]) (err error) {
-		c.OnRetry = &fn
 		return nil
 	}
 }

@@ -3,25 +3,28 @@ package easykafka
 import (
 	"context"
 	"encoding/json"
-	"github.com/avast/retry-go"
 	"github.com/segmentio/kafka-go"
+	"time"
 )
 
 type ProducerOption[T any] func(kafka *Producer[T]) error
-type ProducerRetryHandler[T any] func(k *Producer[T], n uint, err error)
 
 type Producer[T interface{}] struct {
 	addresses []string
 
 	groupId        string
 	threads        []*Consumer[T]
-	maxAttempts    uint
 	preparedTopics []string
 
 	partitions uint
 	writer     *kafka.Writer
+}
 
-	OnRetry *ProducerRetryHandler[T]
+var DefaultWriter = kafka.Writer{
+	Balancer:        kafka.CRC32Balancer{},
+	WriteBackoffMin: 3 * time.Second,
+	WriteBackoffMax: 3 * time.Second,
+	BatchTimeout:    10 * time.Second,
 }
 
 func NewProducer[T any](
@@ -31,13 +34,10 @@ func NewProducer[T any](
 ) *Producer[T] {
 
 	k := &Producer[T]{
-		addresses:   addresses,
-		groupId:     groupId,
-		partitions:  3,
-		maxAttempts: 10,
-		writer: &kafka.Writer{
-			Balancer: kafka.CRC32Balancer{},
-		},
+		addresses:  addresses,
+		groupId:    groupId,
+		partitions: 3,
+		writer:     &DefaultWriter,
 	}
 
 	for _, opt := range opts {
@@ -51,6 +51,10 @@ func NewProducer[T any](
 
 	return k
 
+}
+
+func (p *Producer[T]) Close() error {
+	return p.writer.Close()
 }
 
 func (p *Producer[T]) Produce(topics []string, messages ...*T) error {
@@ -75,15 +79,5 @@ func (p *Producer[T]) Produce(topics []string, messages ...*T) error {
 		}
 	}
 
-	return retry.Do(
-		func() error {
-			return p.writer.WriteMessages(context.Background(), kms...)
-		},
-		retry.OnRetry(func(n uint, err error) {
-			if p.OnRetry != nil {
-				(*p.OnRetry)(p, n, err)
-			}
-		}),
-		retry.Attempts(p.maxAttempts),
-	)
+	return p.writer.WriteMessages(context.Background(), kms...)
 }
