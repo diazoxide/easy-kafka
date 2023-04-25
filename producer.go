@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/segmentio/kafka-go"
-	"time"
 )
 
 type ProducerOption[T any] func(kafka *Producer[T]) error
@@ -21,10 +20,7 @@ type Producer[T interface{}] struct {
 }
 
 var DefaultWriter = kafka.Writer{
-	Balancer:        kafka.CRC32Balancer{},
-	WriteBackoffMin: 3 * time.Second,
-	WriteBackoffMax: 3 * time.Second,
-	BatchTimeout:    10 * time.Second,
+	Balancer: &kafka.LeastBytes{},
 }
 
 func NewProducer[T any](
@@ -58,7 +54,6 @@ func (p *Producer[T]) Close() error {
 }
 
 func (p *Producer[T]) Produce(topics []string, messages ...*T) error {
-
 	notPreparedTopics := findMissing(topics, p.preparedTopics)
 	err := prepareTopics(p.addresses[0], p.partitions, notPreparedTopics...)
 	if err != nil {
@@ -75,7 +70,12 @@ func (p *Producer[T]) Produce(topics []string, messages ...*T) error {
 		}
 
 		for _, topic := range topics {
-			kms = append(kms, kafka.Message{Value: b, Topic: topic})
+			kms = append(
+				kms,
+				kafka.Message{
+					Value: b,
+					Topic: topic,
+				})
 		}
 	}
 
