@@ -10,14 +10,12 @@ import (
 type ConsumerErrorHandler[T any] func(k *Consumer[T], err error)
 
 type Consumer[T interface{}] struct {
-	addresses   []string
-	topics      []string
-	concurrency uint
-
-	groupId      string
-	partitions   uint
-	readerConfig kafka.ReaderConfig
-
+	brokers        []string
+	topics         []string
+	concurrency    uint
+	groupId        string
+	partitions     uint
+	readerConfig   kafka.ReaderConfig
 	onWrongMessage *ConsumerErrorHandler[T]
 	onReadError    *ConsumerErrorHandler[T]
 	threads        []*Consumer[T]
@@ -28,15 +26,14 @@ type ErrorHandler[T any] func(k *Consumer[T], err error)
 type ConsumerOption[T any] func(kafka *Consumer[T]) error
 type ConsumerHandler[T any] func(message *T, kafkaMessage *kafka.Message)
 
-func NewConsumer[T any](
+func InitConsumer[T any](
 	addresses []string,
 	topics []string,
 	groupId string,
 	opts ...ConsumerOption[T],
-) *Consumer[T] {
-
-	k := &Consumer[T]{
-		addresses:    addresses,
+) (consumer *Consumer[T], close func() error) {
+	consumer = &Consumer[T]{
+		brokers:      addresses,
 		topics:       topics,
 		groupId:      groupId,
 		partitions:   3,
@@ -45,26 +42,24 @@ func NewConsumer[T any](
 	}
 
 	for _, opt := range opts {
-		if err := opt(k); err != nil {
+		if err := opt(consumer); err != nil {
 			panic(err)
 		}
 	}
 
-	k.readerConfig.Brokers = k.addresses
-	k.readerConfig.GroupID = k.groupId
-	k.readerConfig.GroupTopics = topics
-	err := prepareTopics(k.addresses[0], k.partitions, topics...)
+	consumer.readerConfig.Brokers = consumer.brokers
+	consumer.readerConfig.GroupID = consumer.groupId
+	consumer.readerConfig.GroupTopics = topics
+	err := prepareTopics(consumer.brokers[0], consumer.partitions, topics...)
 	if err != nil {
 		panic(err)
 	}
-	k.reader = kafka.NewReader(k.readerConfig)
+	consumer.reader = kafka.NewReader(consumer.readerConfig)
 
-	return k
-
+	return consumer, consumer.reader.Close
 }
 
 func (k *Consumer[T]) readMessages() (kafka.Message, error) {
-
 	if k.reader == nil {
 		panic("reader not initialized")
 	}
@@ -99,8 +94,4 @@ func (k *Consumer[T]) Consume(handler ConsumerHandler[T]) {
 		})
 
 	}
-}
-
-func (k *Consumer[T]) Close() error {
-	return k.reader.Close()
 }

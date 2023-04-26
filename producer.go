@@ -9,53 +9,46 @@ import (
 type ProducerOption[T any] func(kafka *Producer[T]) error
 
 type Producer[T interface{}] struct {
-	addresses []string
-
+	brokers        []string
 	groupId        string
 	threads        []*Consumer[T]
 	preparedTopics []string
-
-	partitions uint
-	writer     *kafka.Writer
+	partitions     uint
+	writer         *kafka.Writer
 }
 
 var DefaultWriter = kafka.Writer{
 	Balancer: &kafka.LeastBytes{},
 }
 
-func NewProducer[T any](
+func InitProducer[T any](
 	addresses []string,
 	groupId string,
 	opts ...ProducerOption[T],
-) *Producer[T] {
-
-	k := &Producer[T]{
-		addresses:  addresses,
+) (producer *Producer[T], close func() error) {
+	producer = &Producer[T]{
+		brokers:    addresses,
 		groupId:    groupId,
 		partitions: 3,
 		writer:     &DefaultWriter,
 	}
 
 	for _, opt := range opts {
-		if err := opt(k); err != nil {
+		if err := opt(producer); err != nil {
 			panic(err)
 		}
 	}
 
-	k.writer.Addr = kafka.TCP(addresses...)
-	k.writer.AllowAutoTopicCreation = false
+	producer.writer.Addr = kafka.TCP(addresses...)
+	producer.writer.AllowAutoTopicCreation = false
 
-	return k
+	return producer, producer.writer.Close
 
-}
-
-func (p *Producer[T]) Close() error {
-	return p.writer.Close()
 }
 
 func (p *Producer[T]) Produce(topics []string, messages ...*T) error {
 	notPreparedTopics := findMissing(topics, p.preparedTopics)
-	err := prepareTopics(p.addresses[0], p.partitions, notPreparedTopics...)
+	err := prepareTopics(p.brokers[0], p.partitions, notPreparedTopics...)
 	if err != nil {
 		return err
 	}
