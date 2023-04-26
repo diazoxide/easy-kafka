@@ -9,6 +9,13 @@ func WithReaderConfig[T any](config kafka.ReaderConfig) ConsumerOption[T] {
 	}
 }
 
+func WithMaxBlockingTasks[T any](count uint) ConsumerOption[T] {
+	return func(k *Consumer[T]) (err error) {
+		k.maxBlockingTasks = count
+		return nil
+	}
+}
+
 func ConsumerInitialPartitionsCount[T any](count uint) ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.partitions = count
