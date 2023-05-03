@@ -3,16 +3,32 @@ package easykafka
 import (
 	"github.com/segmentio/kafka-go"
 	"net"
+	"reflect"
+	"sort"
 	"strconv"
 )
 
-func prepareTopics(address string, partitions uint, topics ...string) error {
-	conn, err := kafka.Dial("tcp", address)
+func prepareTopics(controllerConn *kafka.Conn, partitions uint, topics ...string) error {
+	var topicConfigs = make([]kafka.TopicConfig, len(topics))
+	for i, t := range topics {
+		topicConfigs[i] = kafka.TopicConfig{
+			Topic:             t,
+			NumPartitions:     int(partitions),
+			ReplicationFactor: 1,
+		}
+	}
+	return controllerConn.CreateTopics(topicConfigs...)
+}
+
+func mustConnect(brokers []string) *kafka.Conn {
+	conn, err := kafka.Dial("tcp", brokers[0])
 	if err != nil {
 		panic(err)
 	}
-	defer conn.Close()
+	return conn
+}
 
+func getLeaderConn(conn *kafka.Conn) *kafka.Conn {
 	controller, err := conn.Controller()
 	if err != nil {
 		panic(err)
@@ -22,16 +38,14 @@ func prepareTopics(address string, partitions uint, topics ...string) error {
 	if err != nil {
 		panic(err)
 	}
-	defer controllerConn.Close()
+	return controllerConn
+}
 
-	var topicConfigs = make([]kafka.TopicConfig, len(topics))
-	for i, t := range topics {
-		topicConfigs[i] = kafka.TopicConfig{
-			Topic:             t,
-			NumPartitions:     int(partitions),
-			ReplicationFactor: 1,
-		}
-	}
+func unorderedStringsEqual(a, b []string) bool {
+	// Sort both slices
+	sort.Strings(a)
+	sort.Strings(b)
 
-	return controllerConn.CreateTopics(topicConfigs...)
+	// Compare the sorted slices
+	return reflect.DeepEqual(a, b)
 }
