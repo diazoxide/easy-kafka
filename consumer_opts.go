@@ -1,6 +1,9 @@
 package easykafka
 
-import "github.com/segmentio/kafka-go"
+import (
+	"github.com/segmentio/kafka-go"
+	"time"
+)
 
 func ConsumerWithWrongMessageHandler[T any](handler ConsumerErrorHandler[T]) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
@@ -61,6 +64,13 @@ func ConsumerConcurrency[T any](concurrency uint) ConsumerOption[T] {
 func ConsumerDynamicTopicsDiscovery[T any]() ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.dynamicTopicsDiscovery = true
+		return nil
+	}
+}
+
+func ConsumerDynamicTopicsDiscoveryInterval[T any](interval time.Duration) ConsumerOption[T] {
+	return func(c *Consumer[T]) (err error) {
+		c.dynamicTopicsDiscoveryInterval = interval
 		return nil
 	}
 }

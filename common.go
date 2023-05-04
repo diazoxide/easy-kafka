@@ -3,8 +3,7 @@ package easykafka
 import (
 	"github.com/segmentio/kafka-go"
 	"net"
-	"reflect"
-	"sort"
+	"regexp"
 	"strconv"
 )
 
@@ -41,11 +40,19 @@ func getLeaderConn(conn *kafka.Conn) *kafka.Conn {
 	return controllerConn
 }
 
-func unorderedStringsEqual(a, b []string) bool {
-	// Sort both slices
-	sort.Strings(a)
-	sort.Strings(b)
-
-	// Compare the sorted slices
-	return reflect.DeepEqual(a, b)
+// matchTopicsFromPartitions matches topics from partitions
+func matchTopicsFromPartitions(partitions *[]kafka.Partition, patterns []*regexp.Regexp) []string {
+	var matchingTopics []string
+	topicSet := make(map[string]struct{})
+	for _, partition := range *partitions {
+		for _, re := range patterns {
+			if re.MatchString(partition.Topic) {
+				if _, ok := topicSet[partition.Topic]; !ok {
+					topicSet[partition.Topic] = struct{}{}
+					matchingTopics = append(matchingTopics, partition.Topic)
+				}
+			}
+		}
+	}
+	return matchingTopics
 }

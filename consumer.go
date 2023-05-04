@@ -15,31 +15,33 @@ type ConsumerErrorHandler[T any] func(k *Consumer[T], err error)
 type ConsumerTopicsListUpdatedHandler[T any] func(k *Consumer[T], topics []string)
 
 type Consumer[T interface{}] struct {
-	brokers                []string
-	topics                 []string
-	concurrency            uint
-	maxBlockingTasks       uint
-	groupId                string
-	partitions             uint
-	readerConfig           kafka.ReaderConfig
-	onWrongMessage         *ConsumerErrorHandler[T]
-	onReadError            *ConsumerErrorHandler[T]
-	onFailCommit           *ConsumerErrorHandler[T]
-	onTopicsListUpdated    *ConsumerTopicsListUpdatedHandler[T]
-	threads                []*Consumer[T]
-	oldReader              *kafka.Reader
-	reader                 *kafka.Reader
-	conn                   *kafka.Conn
-	leaderConn             *kafka.Conn
-	readerLock             sync.Mutex
-	dynamicTopicsDiscovery bool
-	discoveredTopics       []string
+	brokers                        []string
+	topics                         []string
+	concurrency                    uint
+	maxBlockingTasks               uint
+	groupId                        string
+	partitions                     uint
+	readerConfig                   kafka.ReaderConfig
+	onWrongMessage                 *ConsumerErrorHandler[T]
+	onReadError                    *ConsumerErrorHandler[T]
+	onFailCommit                   *ConsumerErrorHandler[T]
+	onTopicsListUpdated            *ConsumerTopicsListUpdatedHandler[T]
+	threads                        []*Consumer[T]
+	oldReader                      *kafka.Reader
+	reader                         *kafka.Reader
+	conn                           *kafka.Conn
+	leaderConn                     *kafka.Conn
+	readerLock                     sync.Mutex
+	dynamicTopicsDiscovery         bool
+	dynamicTopicsDiscoveryInterval time.Duration
+	discoveredTopics               []string
 }
 
 type ErrorHandler[T any] func(k *Consumer[T], err error)
 type ConsumerOption[T any] func(kafka *Consumer[T]) error
 type ConsumerHandler[T any] func(message *T, kafkaMessage *kafka.Message) error
 
+// InitConsumer creates a new consumer instance
 func InitConsumer[T any](
 	brokers []string,
 	topicsList []string,
@@ -49,13 +51,14 @@ func InitConsumer[T any](
 	var err error
 
 	consumer = &Consumer[T]{
-		brokers:          brokers,
-		topics:           topicsList,
-		groupId:          groupId,
-		partitions:       3,
-		concurrency:      3,
-		maxBlockingTasks: 0,
-		readerConfig:     kafka.ReaderConfig{},
+		brokers:                        brokers,
+		topics:                         topicsList,
+		groupId:                        groupId,
+		partitions:                     3,
+		concurrency:                    3,
+		maxBlockingTasks:               0,
+		readerConfig:                   kafka.ReaderConfig{},
+		dynamicTopicsDiscoveryInterval: 1000 * time.Millisecond,
 	}
 
 	for _, opt := range opts {
@@ -104,12 +107,16 @@ func (k *Consumer[T]) updateReader(topics []string) {
 	conf.GroupTopics = topics
 	k.readerLock.Lock()
 	if k.reader != nil {
-		k.reader.Close()
+		err := k.reader.Close()
+		if err != nil {
+			panic(err)
+		}
 	}
 	k.reader = kafka.NewReader(conf)
 	k.readerLock.Unlock()
 }
 
+// discoveryTopicsAndUpdateReader updates topics list and reader
 func (k *Consumer[T]) discoveryTopicsAndUpdateReader(topics []string) {
 	var patterns []*regexp.Regexp
 	for _, t := range topics {
@@ -121,18 +128,7 @@ func (k *Consumer[T]) discoveryTopicsAndUpdateReader(topics []string) {
 		panic(err)
 	}
 
-	var matchingTopics []string
-	topicSet := make(map[string]struct{})
-	for _, partition := range partitions {
-		for _, re := range patterns {
-			if re.MatchString(partition.Topic) {
-				if _, ok := topicSet[partition.Topic]; !ok {
-					topicSet[partition.Topic] = struct{}{}
-					matchingTopics = append(matchingTopics, partition.Topic)
-				}
-			}
-		}
-	}
+	matchingTopics := matchTopicsFromPartitions(&partitions, patterns)
 
 	if !unorderedStringsEqual(k.discoveredTopics, matchingTopics) {
 		k.discoveredTopics = matchingTopics
@@ -145,15 +141,15 @@ func (k *Consumer[T]) discoveryTopicsAndUpdateReader(topics []string) {
 	}
 }
 
+// dynamicDiscoveryTopics updates topics list every 3 seconds
 func (k *Consumer[T]) dynamicDiscoveryTopics(topics []string) {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(k.dynamicTopicsDiscoveryInterval)
 	for range ticker.C {
 		k.discoveryTopicsAndUpdateReader(topics)
 	}
 }
 
-// Consume messages.
-// When the handler returns an error, the consumer does not commit the message
+// Consume starts consuming messages from kafka
 func (k *Consumer[T]) Consume(ctx context.Context, handler ConsumerHandler[T]) {
 	pool, _ := ants.NewPool(int(k.concurrency),
 		ants.WithMaxBlockingTasks(int(k.maxBlockingTasks)),
