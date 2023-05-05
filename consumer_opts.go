@@ -74,3 +74,17 @@ func ConsumerDynamicTopicsDiscoveryInterval[T any](interval time.Duration) Consu
 		return nil
 	}
 }
+
+func ConsumerTopicNamesRegexMatch[T any]() ConsumerOption[T] {
+	return func(c *Consumer[T]) (err error) {
+		c.topicNamesRegexMatch = true
+		return nil
+	}
+}
+
+func ConsumerTopicNamesExactMatch[T any]() ConsumerOption[T] {
+	return func(c *Consumer[T]) (err error) {
+		c.topicNamesRegexMatch = false
+		return nil
+	}
+}

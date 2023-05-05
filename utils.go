@@ -11,15 +11,12 @@ func findMissing[T comparable](a, b []T) []T {
 	var missing []T // Create a map to store the elements of the second slice
 	elements := make(map[T]bool)
 
-	// Add elements of the second slice to the map
 	for _, v := range b {
 		elements[v] = true
 	}
 
-	// Iterate over the first slice and check if the element exists in the map
 	for _, v := range a {
 		if _, ok := elements[v]; !ok {
-			// Element is not found in the map (second slice), so it is missing
 			missing = append(missing, v)
 		}
 	}
@@ -27,6 +24,7 @@ func findMissing[T comparable](a, b []T) []T {
 	return missing
 }
 
+// unorderedStringsEqual compares two slices of strings without considering the order of the elements
 func unorderedStringsEqual(a, b []string) bool {
 	// Sort both slices
 	sort.Strings(a)
@@ -34,4 +32,33 @@ func unorderedStringsEqual(a, b []string) bool {
 
 	// Compare the sorted slices
 	return reflect.DeepEqual(a, b)
+}
+
+// function that convert slice of *any to slice of any
+func convertSlice[T any](slice []*T) []T {
+	var converted []T
+	for _, v := range slice {
+		converted = append(converted, *v)
+	}
+	return converted
+}
+
+// appendIfMissing appends elements to a slice if they are not already present
+func appendIfMissing[T comparable](slice []T, s ...T) []T {
+	for _, v := range s {
+		if !contains(slice, v) {
+			slice = append(slice, v)
+		}
+	}
+	return slice
+}
+
+// contains checks if a slice contains an element
+func contains[T comparable](slice []T, v T) bool {
+	for _, e := range slice {
+		if e == v {
+			return true
+		}
+	}
+	return false
 }

@@ -5,18 +5,38 @@ import (
 	"net"
 	"regexp"
 	"strconv"
+	"time"
 )
 
-func prepareTopics(controllerConn *kafka.Conn, partitions uint, topics ...string) error {
-	var topicConfigs = make([]kafka.TopicConfig, len(topics))
-	for i, t := range topics {
-		topicConfigs[i] = kafka.TopicConfig{
-			Topic:             t,
-			NumPartitions:     int(partitions),
-			ReplicationFactor: 1,
+func strP(s string) *string {
+	return &s
+}
+
+func intP(i int) *int {
+	return &i
+}
+
+func waitForTopics(conn *kafka.Conn, topics ...string) error {
+	for {
+		foundTopics := matchTopicsFromConnection(conn, topics...)
+
+		ready := 0
+
+		for _, t := range topics {
+			for _, ft := range foundTopics {
+				if t == ft {
+					ready++
+				}
+			}
+		}
+
+		if ready == len(topics) {
+			break
+		} else {
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
-	return controllerConn.CreateTopics(topicConfigs...)
+	return nil
 }
 
 func mustConnect(brokers []string) *kafka.Conn {
@@ -40,11 +60,15 @@ func getLeaderConn(conn *kafka.Conn) *kafka.Conn {
 	return controllerConn
 }
 
-// matchTopicsFromPartitions matches topics from partitions
-func matchTopicsFromPartitions(partitions *[]kafka.Partition, patterns []*regexp.Regexp) []string {
+// matchTopicsFromConnectionByRegex matches topics from partitions
+func matchTopicsFromConnectionByRegex(conn *kafka.Conn, patterns ...*regexp.Regexp) []string {
+	partitions, err := conn.ReadPartitions()
+	if err != nil {
+		panic(err)
+	}
 	var matchingTopics []string
 	topicSet := make(map[string]struct{})
-	for _, partition := range *partitions {
+	for _, partition := range partitions {
 		for _, re := range patterns {
 			if re.MatchString(partition.Topic) {
 				if _, ok := topicSet[partition.Topic]; !ok {
@@ -55,4 +79,43 @@ func matchTopicsFromPartitions(partitions *[]kafka.Partition, patterns []*regexp
 		}
 	}
 	return matchingTopics
+}
+
+func matchTopicsFromConnection(conn *kafka.Conn, topics ...string) []string {
+	partitions, err := conn.ReadPartitions()
+	if err != nil {
+		panic(err)
+	}
+	var matchingTopics []string
+	topicSet := make(map[string]struct{})
+	for _, partition := range partitions {
+		for _, t := range topics {
+			if partition.Topic == t {
+				if _, ok := topicSet[partition.Topic]; !ok {
+					topicSet[partition.Topic] = struct{}{}
+					matchingTopics = append(matchingTopics, partition.Topic)
+				}
+			}
+		}
+	}
+	return matchingTopics
+}
+
+// scrapTopicsFromMessages scraps topics from messages
+func scrapTopicsFromMessages(messages []*kafka.Message) []string {
+	var topics []string
+	for _, m := range messages {
+		var found bool
+		for _, t := range topics {
+			if t == m.Topic {
+				found = true
+			}
+		}
+		if found {
+			continue
+		}
+		topics = append(topics, m.Topic)
+	}
+
+	return topics
 }

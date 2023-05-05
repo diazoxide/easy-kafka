@@ -14,13 +14,14 @@ import (
 type ConsumerErrorHandler[T any] func(k *Consumer[T], err error)
 type ConsumerTopicsListUpdatedHandler[T any] func(k *Consumer[T], topics []string)
 
-type Consumer[T interface{}] struct {
+type Consumer[T any] struct {
 	brokers                        []string
 	topics                         []string
 	concurrency                    uint
 	maxBlockingTasks               uint
 	groupId                        string
 	partitions                     uint
+	topicNamesRegexMatch           bool
 	readerConfig                   kafka.ReaderConfig
 	onWrongMessage                 *ConsumerErrorHandler[T]
 	onReadError                    *ConsumerErrorHandler[T]
@@ -86,6 +87,9 @@ func InitConsumer[T any](
 		go consumer.dynamicDiscoveryTopics(topicsList)
 	} else {
 		consumer.discoveryTopicsAndUpdateReader(topicsList)
+		if consumer.reader == nil {
+			panic("Error: maybe you have wrong topic name or topic not exists")
+		}
 	}
 
 	return consumer, func() error {
@@ -118,17 +122,18 @@ func (k *Consumer[T]) updateReader(topics []string) {
 
 // discoveryTopicsAndUpdateReader updates topics list and reader
 func (k *Consumer[T]) discoveryTopicsAndUpdateReader(topics []string) {
-	var patterns []*regexp.Regexp
-	for _, t := range topics {
-		patterns = append(patterns, regexp.MustCompile(t))
-	}
+	var matchingTopics []string
 
-	partitions, err := k.leaderConn.ReadPartitions()
-	if err != nil {
-		panic(err)
-	}
+	if k.topicNamesRegexMatch {
+		var patterns []*regexp.Regexp
+		for _, t := range topics {
+			patterns = append(patterns, regexp.MustCompile(t))
+		}
 
-	matchingTopics := matchTopicsFromPartitions(&partitions, patterns)
+		matchingTopics = matchTopicsFromConnectionByRegex(k.leaderConn, patterns...)
+	} else {
+		matchingTopics = matchTopicsFromConnection(k.leaderConn, topics...)
+	}
 
 	if !unorderedStringsEqual(k.discoveredTopics, matchingTopics) {
 		k.discoveredTopics = matchingTopics
