@@ -10,11 +10,6 @@ type Producer[T any] struct {
 	*BaseProducer
 }
 
-var DefaultWriter = kafka.Writer{
-	Balancer:    &kafka.LeastBytes{},
-	MaxAttempts: 15,
-}
-
 func InitProducer[T any](
 	brokers []string,
 	opts ...BaseProducerOption,

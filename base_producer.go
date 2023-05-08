@@ -17,7 +17,7 @@ type BaseProducer struct {
 	retriesCount   uint
 	writer         *kafka.Writer
 	conn           *kafka.Conn
-	controllerConn *kafka.Conn
+	leaderConn     *kafka.Conn
 }
 
 func InitBaseProducer(
@@ -25,9 +25,11 @@ func InitBaseProducer(
 	opts ...BaseProducerOption,
 ) (producer *BaseProducer, close func() error) {
 	producer = &BaseProducer{
-		brokers:      brokers,
-		partitions:   3,
-		writer:       &DefaultWriter,
+		brokers:    brokers,
+		partitions: 3,
+		writer: &kafka.Writer{
+			Balancer: &kafka.LeastBytes{},
+		},
 		retryDelay:   time.Millisecond * 100,
 		retriesCount: 100,
 	}
@@ -40,7 +42,7 @@ func InitBaseProducer(
 
 	// Init conn
 	producer.conn = mustConnect(brokers)
-	producer.controllerConn = getLeaderConn(producer.conn)
+	producer.leaderConn = getLeaderConn(producer.conn)
 
 	producer.writer.Addr = kafka.TCP(brokers...)
 	producer.writer.AllowAutoTopicCreation = false
@@ -54,7 +56,11 @@ func InitBaseProducer(
 		if err != nil {
 			return err
 		}
-		return err
+		err = producer.leaderConn.Close()
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 }
 
@@ -78,7 +84,7 @@ func (p *BaseProducer) prepareTopics(topics ...string) error {
 			ReplicationFactor: 1,
 		}
 	}
-	err := p.controllerConn.CreateTopics(topicConfigs...)
+	err := p.leaderConn.CreateTopics(topicConfigs...)
 	if err != nil {
 		return err
 	}
