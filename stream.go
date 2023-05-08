@@ -3,6 +3,7 @@ package easykafka
 import (
 	"context"
 	"github.com/segmentio/kafka-go"
+	"time"
 )
 
 // StreamRoutingRule is a function that modifies a message
@@ -59,6 +60,10 @@ func InitStream[T any](
 			s.producerOptions,
 			BaseProducerWithLogger(s.logger),
 			BaseProducerWithErrorLogger(s.logger),
+			BaseProducerWithWriterConfig(&kafka.Writer{
+				Balancer:     &kafka.LeastBytes{},
+				BatchTimeout: time.Nanosecond,
+			}),
 		)...,
 	)
 	s.producer = producer
@@ -80,6 +85,7 @@ func InitStream[T any](
 func (s *Stream[T]) Run(ctx context.Context, routingRules ...StreamRoutingRule[T]) {
 	s.log("starting stream with %d routing rules", len(routingRules))
 	s.consumer.Consume(ctx, func(message *T, kafkaMessage *kafka.Message) error {
+		start := time.Now()
 		// Log message topic and partition
 		s.log("received message from topic %s partition %d", kafkaMessage.Topic, kafkaMessage.Partition)
 
@@ -96,6 +102,7 @@ func (s *Stream[T]) Run(ctx context.Context, routingRules ...StreamRoutingRule[T
 				}
 			}
 		}
+		s.log("message processed in %s", time.Since(start))
 		return nil
 	})
 }
