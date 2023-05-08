@@ -78,10 +78,19 @@ func InitBaseProducer(
 // Produce writes messages to kafka
 func (p *BaseProducer) Produce(ctx context.Context, messages ...*kafka.Message) error {
 
+	startTime := time.Now()
+
 	topics := scrapTopicsFromMessages(messages)
 	p.waitTopics(topics)
 
-	return p.tryWriteMessages(ctx, p.retriesCount, messages...)
+	err := p.tryWriteMessages(ctx, p.retriesCount, messages...)
+	if err != nil {
+		p.log("error while producing messages: %s", err)
+	} else {
+		p.log("produced %d messages to %d topics in %s", len(messages), len(topics), time.Since(startTime))
+	}
+
+	return err
 }
 
 // run createTopics every 1 second
@@ -126,10 +135,11 @@ func (p *BaseProducer) createTopic(topic string) error {
 
 // wait when all topics statuses will be true, with timeout
 func (p *BaseProducer) waitTopics(topics []string) {
+	start := time.Now()
 	p.log("waiting topics %v", topics)
 	for {
 		if p.topicsReady(topics) {
-			p.log("all topics ready")
+			p.log("topics %v ready in %s", topics, time.Since(start))
 			return
 		}
 		time.Sleep(time.Second)
@@ -159,14 +169,19 @@ func (p *BaseProducer) tryWriteMessages(
 	retryCount uint,
 	messages ...*kafka.Message,
 ) error {
+	start := time.Now()
 	if retryCount == 0 {
 		return fmt.Errorf("failed to write messages")
 	}
+
+	p.log("try to write messages, retry count: %d", retryCount)
 
 	err := p.writer.WriteMessages(ctx, convertSlice(messages)...)
 	if err != nil {
 		time.Sleep(p.retryDelay)
 		return p.tryWriteMessages(ctx, retryCount-1, messages...)
+	} else {
+		p.log("messages written in %s", time.Since(start))
 	}
 
 	return nil
