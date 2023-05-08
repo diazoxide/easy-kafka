@@ -15,6 +15,7 @@ type ConsumerErrorHandler[T any] func(k *Consumer[T], err error)
 type ConsumerTopicsListUpdatedHandler[T any] func(k *Consumer[T], topics []string)
 
 type Consumer[T any] struct {
+	LoggerContainer
 	brokers                        []string
 	topics                         []string
 	concurrency                    uint
@@ -156,6 +157,8 @@ func (k *Consumer[T]) dynamicDiscoveryTopics(topics []string) {
 
 // Consume starts consuming messages from kafka
 func (k *Consumer[T]) Consume(ctx context.Context, handler ConsumerHandler[T]) {
+	k.log("start consuming messages")
+
 	pool, _ := ants.NewPool(int(k.concurrency),
 		ants.WithMaxBlockingTasks(int(k.maxBlockingTasks)),
 	)
@@ -194,8 +197,10 @@ func (k *Consumer[T]) Consume(ctx context.Context, handler ConsumerHandler[T]) {
 		err = pool.Submit(func() {
 			err = handler(&message, &m)
 			if err == nil {
+				k.log("commit message")
 				err = k.reader.CommitMessages(ctx, m)
 				if err != nil {
+					k.error("error commit message: %s", err.Error())
 					if k.onFailCommit != nil {
 						(*k.onFailCommit)(k, err)
 					}

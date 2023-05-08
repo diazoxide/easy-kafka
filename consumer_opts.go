@@ -5,6 +5,20 @@ import (
 	"time"
 )
 
+func ConsumerWithLogger[T any](logger kafka.Logger) ConsumerOption[T] {
+	return func(c *Consumer[T]) (err error) {
+		c.LoggerContainer.logger = logger
+		return nil
+	}
+}
+
+func ConsumerWithErrorLogger[T any](logger kafka.Logger) ConsumerOption[T] {
+	return func(c *Consumer[T]) (err error) {
+		c.LoggerContainer.errorLogger = logger
+		return nil
+	}
+}
+
 func ConsumerWithWrongMessageHandler[T any](handler ConsumerErrorHandler[T]) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
 		k.onWrongMessage = &handler

@@ -7,31 +7,38 @@ import (
 	"time"
 )
 
+// BaseProducerOption is a function that sets some option on the producer
 type BaseProducerOption func(kafka *BaseProducer) error
 
+// BaseProducer is a wrapper around kafka.Writer
 type BaseProducer struct {
+	LoggerContainer
 	brokers        []string
-	preparedTopics []string
+	topicStatusMap map[string]bool
 	partitions     uint
 	retryDelay     time.Duration
 	retriesCount   uint
 	writer         *kafka.Writer
 	conn           *kafka.Conn
 	leaderConn     *kafka.Conn
+	replications   uint
 }
 
+// InitBaseProducer creates a new producer instance
 func InitBaseProducer(
 	brokers []string,
 	opts ...BaseProducerOption,
 ) (producer *BaseProducer, close func() error) {
 	producer = &BaseProducer{
-		brokers:    brokers,
-		partitions: 3,
+		brokers:      brokers,
+		partitions:   3,
+		replications: 1,
 		writer: &kafka.Writer{
 			Balancer: &kafka.LeastBytes{},
 		},
-		retryDelay:   time.Millisecond * 100,
-		retriesCount: 100,
+		retryDelay:     time.Millisecond * 100,
+		retriesCount:   100,
+		topicStatusMap: map[string]bool{},
 	}
 
 	for _, opt := range opts {
@@ -40,12 +47,16 @@ func InitBaseProducer(
 		}
 	}
 
-	// Init conn
+	// Init connection to kafka
 	producer.conn = mustConnect(brokers)
 	producer.leaderConn = getLeaderConn(producer.conn)
 
 	producer.writer.Addr = kafka.TCP(brokers...)
 	producer.writer.AllowAutoTopicCreation = false
+	producer.writer.Logger = producer.logger
+	producer.writer.ErrorLogger = producer.errorLogger
+
+	go producer.createMissingTopicsPeriodically()
 
 	return producer, func() error {
 		err := producer.writer.Close()
@@ -64,36 +75,85 @@ func InitBaseProducer(
 	}
 }
 
+// Produce writes messages to kafka
 func (p *BaseProducer) Produce(ctx context.Context, messages ...*kafka.Message) error {
+
 	topics := scrapTopicsFromMessages(messages)
-	err := p.prepareTopics(topics...)
-	if err != nil {
-		return err
-	}
+	p.waitTopics(topics)
 
 	return p.tryWriteMessages(ctx, p.retriesCount, messages...)
 }
 
-func (p *BaseProducer) prepareTopics(topics ...string) error {
-	notPreparedTopics := findMissing(topics, p.preparedTopics)
-	var topicConfigs = make([]kafka.TopicConfig, len(topics))
-	for i, t := range topics {
-		topicConfigs[i] = kafka.TopicConfig{
-			Topic:             t,
-			NumPartitions:     int(p.partitions),
-			ReplicationFactor: 1,
+// run createTopics every 1 second
+func (p *BaseProducer) createMissingTopicsPeriodically() {
+	for {
+		err := p.createMissingTopics()
+		if err != nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// create topics from topicsStatusMap where status is false and change status to true
+func (p *BaseProducer) createMissingTopics() error {
+	for topic, status := range p.topicStatusMap {
+		if !status {
+			p.log("topic %s not ready, preparing...", topic)
+			if !p.topicExists(topic) {
+				err := p.createTopic(topic)
+				if err != nil {
+					p.error("error while creating topic %s: %s", topic, err.Error())
+					return err
+				}
+			}
+			p.topicStatusMap[topic] = true
+			p.log("topic %s ready", topic)
 		}
 	}
-	err := p.leaderConn.CreateTopics(topicConfigs...)
-	if err != nil {
-		return err
-	}
-
-	p.preparedTopics = appendIfMissing(p.preparedTopics, notPreparedTopics...)
-
 	return nil
 }
 
+// createTopic creates topic with N partition and N replication factor
+func (p *BaseProducer) createTopic(topic string) error {
+	p.log("creating topic %s", topic)
+	return p.conn.CreateTopics(kafka.TopicConfig{
+		Topic:             topic,
+		NumPartitions:     int(p.partitions),
+		ReplicationFactor: int(p.replications),
+	})
+}
+
+// wait when all topics statuses will be true, with timeout
+func (p *BaseProducer) waitTopics(topics []string) {
+	p.log("waiting topics %v", topics)
+	for {
+		if p.topicsReady(topics) {
+			p.log("all topics ready")
+			return
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// topicsReady checks if all topics statuses are true
+func (p *BaseProducer) topicsReady(topics []string) bool {
+	for _, topic := range topics {
+		if _, exist := p.topicStatusMap[topic]; !exist {
+			p.topicStatusMap[topic] = false
+			return false
+		}
+	}
+	return true
+}
+
+// topicExists checks if topic exists
+func (p *BaseProducer) topicExists(topic string) bool {
+	_, err := p.leaderConn.ReadPartitions(topic)
+	return err == nil
+}
+
+// tryWriteMessages tries to write messages to kafka, if failed, wait retryDelay and try again
 func (p *BaseProducer) tryWriteMessages(
 	ctx context.Context,
 	retryCount uint,

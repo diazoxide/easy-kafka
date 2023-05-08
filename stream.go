@@ -2,7 +2,6 @@ package easykafka
 
 import (
 	"context"
-	"fmt"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -11,6 +10,7 @@ type StreamRoutingRule[T any] func(message *T, kafkaMessage *kafka.Message) (new
 
 // Stream is a wrapper around Consumer and Producer
 type Stream[T any] struct {
+	LoggerContainer
 	brokers         []string
 	groupId         string
 	consumer        *Consumer[T]
@@ -41,10 +41,26 @@ func InitStream[T any](
 		}
 	}
 
-	consumer, closeConsumer := InitConsumer[T](brokers, topicsList, groupId, s.consumerOptions...)
+	consumer, closeConsumer := InitConsumer[T](
+		brokers,
+		topicsList,
+		groupId,
+		append(
+			s.consumerOptions,
+			ConsumerWithLogger[T](s.logger),
+			ConsumerWithErrorLogger[T](s.logger),
+		)...,
+	)
 	s.consumer = consumer
 
-	producer, closeProducer := InitBaseProducer(brokers, s.producerOptions...)
+	producer, closeProducer := InitBaseProducer(
+		brokers,
+		append(
+			s.producerOptions,
+			BaseProducerWithLogger(s.logger),
+			BaseProducerWithErrorLogger(s.logger),
+		)...,
+	)
 	s.producer = producer
 
 	return s, func() error {
@@ -62,7 +78,11 @@ func InitStream[T any](
 
 // Run starts the stream
 func (s *Stream[T]) Run(ctx context.Context, routingRules ...StreamRoutingRule[T]) {
+	s.log("starting stream with %d routing rules", len(routingRules))
 	s.consumer.Consume(ctx, func(message *T, kafkaMessage *kafka.Message) error {
+		// Log message topic and partition
+		s.log("received message from topic %s partition %d", kafkaMessage.Topic, kafkaMessage.Partition)
+
 		for _, routingRule := range routingRules {
 			newMessage, err := routingRule(message, kafkaMessage)
 			if err != nil {
@@ -71,7 +91,7 @@ func (s *Stream[T]) Run(ctx context.Context, routingRules ...StreamRoutingRule[T
 			if newMessage != nil {
 				err := s.producer.Produce(ctx, newMessage)
 				if err != nil {
-					fmt.Println("error producing message", err.Error())
+					s.error("error producing message: %s", err.Error())
 					return err
 				}
 			}

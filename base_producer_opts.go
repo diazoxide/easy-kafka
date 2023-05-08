@@ -15,3 +15,17 @@ func BaseProducerInitialPartitionsCount(count uint) BaseProducerOption {
 		return nil
 	}
 }
+
+func BaseProducerWithLogger(logger kafka.Logger) BaseProducerOption {
+	return func(c *BaseProducer) (err error) {
+		c.LoggerContainer.logger = logger
+		return nil
+	}
+}
+
+func BaseProducerWithErrorLogger(logger kafka.Logger) BaseProducerOption {
+	return func(c *BaseProducer) (err error) {
+		c.LoggerContainer.errorLogger = logger
+		return nil
+	}
+}
