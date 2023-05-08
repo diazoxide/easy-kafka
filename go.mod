@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/panjf2000/ants/v2 v2.7.3
-	github.com/segmentio/kafka-go v0.4.39
+	github.com/segmentio/kafka-go v0.4.40
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/net v0.9.0
 )
