@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// ConsumerWithLogger sets logger
 func ConsumerWithLogger[T any](logger kafka.Logger) ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.LoggerContainer.logger = logger
@@ -12,6 +13,7 @@ func ConsumerWithLogger[T any](logger kafka.Logger) ConsumerOption[T] {
 	}
 }
 
+// ConsumerWithErrorLogger sets error logger
 func ConsumerWithErrorLogger[T any](logger kafka.Logger) ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.LoggerContainer.errorLogger = logger
@@ -19,6 +21,7 @@ func ConsumerWithErrorLogger[T any](logger kafka.Logger) ConsumerOption[T] {
 	}
 }
 
+// ConsumerWithWrongMessageHandler sets handler for wrong message
 func ConsumerWithWrongMessageHandler[T any](handler ConsumerErrorHandler[T]) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
 		k.onWrongMessage = &handler
@@ -26,6 +29,7 @@ func ConsumerWithWrongMessageHandler[T any](handler ConsumerErrorHandler[T]) Con
 	}
 }
 
+// ConsumerWithReadMessageHandler sets handler for read message
 func ConsumerWithReadMessageHandler[T any](handler ConsumerErrorHandler[T]) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
 		k.onReadError = &handler
@@ -33,6 +37,7 @@ func ConsumerWithReadMessageHandler[T any](handler ConsumerErrorHandler[T]) Cons
 	}
 }
 
+// ConsumerWithTopicsListUpdatedHandler sets handler for topics list update
 func ConsumerWithTopicsListUpdatedHandler[T any](handler ConsumerTopicsListUpdatedHandler[T]) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
 		k.onTopicsListUpdated = &handler
@@ -40,6 +45,7 @@ func ConsumerWithTopicsListUpdatedHandler[T any](handler ConsumerTopicsListUpdat
 	}
 }
 
+// ConsumerWithOnFailCommitHandler sets handler for commit error
 func ConsumerWithOnFailCommitHandler[T any](handler ConsumerErrorHandler[T]) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
 		k.onFailCommit = &handler
@@ -47,6 +53,7 @@ func ConsumerWithOnFailCommitHandler[T any](handler ConsumerErrorHandler[T]) Con
 	}
 }
 
+// ConsumerWithReaderConfig sets reader config
 func ConsumerWithReaderConfig[T any](config kafka.ReaderConfig) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
 		k.readerConfig = config
@@ -54,6 +61,7 @@ func ConsumerWithReaderConfig[T any](config kafka.ReaderConfig) ConsumerOption[T
 	}
 }
 
+// ConsumerWithMaxBlockingTasks sets max blocking tasks
 func ConsumerWithMaxBlockingTasks[T any](count uint) ConsumerOption[T] {
 	return func(k *Consumer[T]) (err error) {
 		k.maxBlockingTasks = count
@@ -61,6 +69,7 @@ func ConsumerWithMaxBlockingTasks[T any](count uint) ConsumerOption[T] {
 	}
 }
 
+// ConsumerInitialPartitionsCount sets initial partitions count
 func ConsumerInitialPartitionsCount[T any](count uint) ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.partitions = count
@@ -68,6 +77,7 @@ func ConsumerInitialPartitionsCount[T any](count uint) ConsumerOption[T] {
 	}
 }
 
+// ConsumerConcurrency sets parallel tasks count
 func ConsumerConcurrency[T any](concurrency uint) ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.concurrency = concurrency
@@ -75,6 +85,7 @@ func ConsumerConcurrency[T any](concurrency uint) ConsumerOption[T] {
 	}
 }
 
+// ConsumerDynamicTopicsDiscovery enable dynamic topics discovery
 func ConsumerDynamicTopicsDiscovery[T any]() ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.dynamicTopicsDiscovery = true
@@ -82,6 +93,7 @@ func ConsumerDynamicTopicsDiscovery[T any]() ConsumerOption[T] {
 	}
 }
 
+// ConsumerDynamicTopicsDiscoveryInterval sets dynamic topics discovery interval
 func ConsumerDynamicTopicsDiscoveryInterval[T any](interval time.Duration) ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.dynamicTopicsDiscoveryInterval = interval
@@ -89,6 +101,7 @@ func ConsumerDynamicTopicsDiscoveryInterval[T any](interval time.Duration) Consu
 	}
 }
 
+// ConsumerTopicNamesRegexMatch enable regex match for topic names
 func ConsumerTopicNamesRegexMatch[T any]() ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.topicNamesRegexMatch = true
@@ -96,6 +109,7 @@ func ConsumerTopicNamesRegexMatch[T any]() ConsumerOption[T] {
 	}
 }
 
+// ConsumerTopicNamesExactMatch enable exact match for topic names
 func ConsumerTopicNamesExactMatch[T any]() ConsumerOption[T] {
 	return func(c *Consumer[T]) (err error) {
 		c.topicNamesRegexMatch = false

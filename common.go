@@ -5,40 +5,19 @@ import (
 	"net"
 	"regexp"
 	"strconv"
-	"time"
 )
 
+// strP returns pointer to string
 func strP(s string) *string {
 	return &s
 }
 
+// intP returns pointer to int
 func intP(i int) *int {
 	return &i
 }
 
-func waitForTopics(conn *kafka.Conn, topics ...string) error {
-	for {
-		foundTopics := matchTopicsFromConnection(conn, topics...)
-
-		ready := 0
-
-		for _, t := range topics {
-			for _, ft := range foundTopics {
-				if t == ft {
-					ready++
-				}
-			}
-		}
-
-		if ready == len(topics) {
-			break
-		} else {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-	return nil
-}
-
+// mustConnect connects to kafka
 func mustConnect(brokers []string) *kafka.Conn {
 	conn, err := kafka.Dial("tcp", brokers[0])
 	if err != nil {
@@ -47,6 +26,7 @@ func mustConnect(brokers []string) *kafka.Conn {
 	return conn
 }
 
+// getLeaderConn returns connection to leader
 func getLeaderConn(conn *kafka.Conn) *kafka.Conn {
 	controller, err := conn.Controller()
 	if err != nil {
@@ -81,6 +61,7 @@ func matchTopicsFromConnectionByRegex(conn *kafka.Conn, patterns ...*regexp.Rege
 	return matchingTopics
 }
 
+// matchTopicsFromConnection matches topics from partitions
 func matchTopicsFromConnection(conn *kafka.Conn, topics ...string) []string {
 	partitions, err := conn.ReadPartitions()
 	if err != nil {

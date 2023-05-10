@@ -19,6 +19,7 @@ type Stream[T any] struct {
 	topics          []string
 	consumerOptions []ConsumerOption[T]
 	producerOptions []BaseProducerOption
+	parallelJobs    uint
 }
 
 // StreamOption is a function that modifies a Stream instance
@@ -32,8 +33,9 @@ func InitStream[T any](
 	opts ...StreamOption[T],
 ) (*Stream[T], func() error) {
 	s := &Stream[T]{
-		brokers: brokers,
-		groupId: groupId,
+		brokers:      brokers,
+		groupId:      groupId,
+		parallelJobs: 5,
 	}
 
 	for _, opt := range opts {
@@ -50,6 +52,7 @@ func InitStream[T any](
 			s.consumerOptions,
 			ConsumerWithLogger[T](s.logger),
 			ConsumerWithErrorLogger[T](s.logger),
+			ConsumerConcurrency[T](s.parallelJobs),
 		)...,
 	)
 	s.consumer = consumer
