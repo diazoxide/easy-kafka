@@ -14,6 +14,7 @@ import (
 type ConsumerErrorHandler[T any] func(k *Consumer[T], err error)
 type ConsumerTopicsListUpdatedHandler[T any] func(k *Consumer[T], topics []string)
 
+// Consumer is a wrapper around kafka.Reader
 type Consumer[T any] struct {
 	LoggerContainer
 	brokers                        []string
@@ -39,8 +40,13 @@ type Consumer[T any] struct {
 	discoveredTopics               []string
 }
 
+// ErrorHandler is a function that handles errors
 type ErrorHandler[T any] func(k *Consumer[T], err error)
+
+// ConsumerOption is a function that sets some option
 type ConsumerOption[T any] func(kafka *Consumer[T]) error
+
+// ConsumerHandler is a function that handles messages
 type ConsumerHandler[T any] func(message *T, kafkaMessage *kafka.Message) error
 
 // InitConsumer creates a new consumer instance
@@ -107,6 +113,7 @@ func InitConsumer[T any](
 	}
 }
 
+// updateReader updates reader with new topics list
 func (k *Consumer[T]) updateReader(topics []string) {
 	conf := k.readerConfig
 	conf.GroupTopics = topics

@@ -36,7 +36,7 @@ func InitBaseProducer(
 		writer: &kafka.Writer{
 			Balancer: &kafka.LeastBytes{},
 		},
-		retryDelay:     time.Millisecond * 100,
+		retryDelay:     time.Millisecond * 500,
 		retriesCount:   100,
 		topicStatusMap: map[string]bool{},
 	}

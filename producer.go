@@ -6,10 +6,12 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+// Producer is a wrapper around BaseProducer
 type Producer[T any] struct {
 	*BaseProducer
 }
 
+// InitProducer initializes a new Producer instance
 func InitProducer[T any](
 	brokers []string,
 	opts ...BaseProducerOption,
@@ -23,6 +25,7 @@ func InitProducer[T any](
 	return producer, closeBaseProducer
 }
 
+// Produce sends messages to kafka
 func (p *Producer[T]) Produce(ctx context.Context, topics []string, messages ...*T) error {
 	var kms []*kafka.Message
 	for _, m := range messages {
